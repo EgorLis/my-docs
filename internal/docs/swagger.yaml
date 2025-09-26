@@ -131,6 +131,10 @@ paths:
   /api/docs:
     get:
       parameters:
+      - description: 'Auth token (alternative to Authorization: Bearer)'
+        in: query
+        name: token
+        type: string
       - description: owner login (optional)
         in: query
         name: login
@@ -175,6 +179,10 @@ paths:
       - multipart/form-data
       description: 'multipart: meta(json), json(optional), file(optional)'
       parameters:
+      - description: 'Auth token (alternative to Authorization: Bearer)'
+        in: query
+        name: token
+        type: string
       - description: JSON meta
         in: formData
         name: meta
@@ -218,6 +226,10 @@ paths:
   /api/docs/{id}:
     delete:
       parameters:
+      - description: 'Auth token (alternative to Authorization: Bearer)'
+        in: query
+        name: token
+        type: string
       - description: document id
         in: path
         name: id
@@ -250,6 +262,10 @@ paths:
       - docs
     get:
       parameters:
+      - description: 'Auth token (alternative to Authorization: Bearer)'
+        in: query
+        name: token
+        type: string
       - description: document id
         in: path
         name: id

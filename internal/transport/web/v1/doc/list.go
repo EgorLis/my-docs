@@ -14,6 +14,7 @@ import (
 // @Summary     List documents
 // @Tags        docs
 // @Produce     json
+// @Param token query string false "Auth token (alternative to Authorization: Bearer)"
 // @Param       login query string false "owner login (optional)"
 // @Param       key   query string false "filter key (name|mime)"
 // @Param       value query string false "filter value"

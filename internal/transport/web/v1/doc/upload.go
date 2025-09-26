@@ -17,6 +17,7 @@ import (
 // @Tags        docs
 // @Accept      multipart/form-data
 // @Produce     json
+// @Param token query string false "Auth token (alternative to Authorization: Bearer)"
 // @Param       meta formData string true  "JSON meta"
 // @Param       json formData string false "JSON body"
 // @Param       file formData file   false "file"

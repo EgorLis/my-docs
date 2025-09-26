@@ -150,6 +150,12 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "description": "Auth token (alternative to Authorization: Bearer)",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "owner login (optional)",
                         "name": "login",
                         "in": "query"
@@ -219,6 +225,12 @@ const docTemplate = `{
                 ],
                 "summary": "Upload new document",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Auth token (alternative to Authorization: Bearer)",
+                        "name": "token",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "JSON meta",
@@ -291,6 +303,12 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "description": "Auth token (alternative to Authorization: Bearer)",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "document id",
                         "name": "id",
                         "in": "path",
@@ -324,6 +342,12 @@ const docTemplate = `{
                 ],
                 "summary": "Delete document (owner only)",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Auth token (alternative to Authorization: Bearer)",
+                        "name": "token",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "document id",

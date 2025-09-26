@@ -13,6 +13,7 @@ import (
 // Delete godoc
 // @Summary     Delete document (owner only)
 // @Tags        docs
+// @Param token query string false "Auth token (alternative to Authorization: Bearer)"
 // @Param       id path string true "document id"
 // @Success     200 {object} domain.APIEnvelope{response=object}
 // @Failure     401 {object} domain.APIEnvelope

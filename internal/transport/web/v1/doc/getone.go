@@ -17,6 +17,7 @@ import (
 // @Summary     Get single document or file
 // @Tags        docs
 // @Produce     json
+// @Param token query string false "Auth token (alternative to Authorization: Bearer)"
 // @Param       id path string true "document id"
 // @Success     200 {object} domain.APIEnvelope
 // @Success     200 {file}  []byte "when file"

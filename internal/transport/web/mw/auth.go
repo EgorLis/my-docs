@@ -17,14 +17,14 @@ type AuthDeps struct {
 
 func OptionalAuth(deps AuthDeps, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw := extractBearer(r.Header.Get("Authorization"))
+		raw := extractTokenAny(r) // <-- ТУТ
 		if raw == "" {
-			next.ServeHTTP(w, r) // без пользователя
+			next.ServeHTTP(w, r)
 			return
 		}
 		claims, err := deps.Tokens.Parse(r.Context(), raw)
 		if err != nil {
-			next.ServeHTTP(w, r) // не валидный — просто идём как неавторизованный
+			next.ServeHTTP(w, r)
 			return
 		}
 		if revoked, _ := deps.Blacklist.IsRevoked(r.Context(), claims.JTI); revoked {
@@ -39,7 +39,7 @@ func OptionalAuth(deps AuthDeps, next http.Handler) http.Handler {
 
 func RequireAuth(deps AuthDeps, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw := extractBearer(r.Header.Get("Authorization"))
+		raw := extractTokenAny(r) // <-- ТУТ
 		if raw == "" {
 			http.Error(w, `{"error":{"code":1001,"text":"unauthorized"}}`, http.StatusUnauthorized)
 			return
@@ -64,7 +64,12 @@ func UserFromCtx(ctx context.Context) (domain.User, bool) {
 	return u, ok
 }
 
-func extractBearer(h string) string {
+// Берём токен из query (?token=...), а если его нет — из Authorization: Bearer ...
+func extractTokenAny(r *http.Request) string {
+	if t := r.URL.Query().Get("token"); t != "" { // не трогаем тело (без ParseForm), безопасно для multipart
+		return t
+	}
+	h := r.Header.Get("Authorization")
 	if len(h) > 7 && strings.EqualFold(h[:7], "Bearer ") {
 		return strings.TrimSpace(h[7:])
 	}
