@@ -125,7 +125,7 @@ tasks:
     deps: [swagger:install]
     cmds:
       # Генерим из main-файла, парсим cmd и internal чтобы найти все аннотации
-      - swag init -g cmd/my-subs/main.go -o internal/docs -d ./cmd,./internal
+      - swag init -g my-docs/main.go -o internal/docs -d ./cmd,./internal
     sources:
       # при изменении хендлеров/комментариев эта задача будет пересобираться
       - cmd/**/*

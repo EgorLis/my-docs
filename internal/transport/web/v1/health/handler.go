@@ -9,13 +9,14 @@ import (
 	v1 "github.com/EgorLis/my-docs/internal/transport/web/v1"
 )
 
-type DBPinger interface {
+type Pinger interface {
 	Ping(context.Context) error
 }
 
 type Handler struct {
-	Log *log.Logger
-	DBPinger
+	Log   *log.Logger
+	DB    Pinger
+	Cache Pinger
 }
 
 // Liveness godoc
@@ -41,7 +42,15 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5000*time.Millisecond)
 	defer cancel()
 
-	err := h.DBPinger.Ping(ctx)
+	err := h.DB.Ping(ctx)
+
+	if err != nil {
+		h.Log.Printf("readiness error: %v", err)
+		v1.WriteError(w, http.StatusServiceUnavailable, "")
+		return
+	}
+
+	err = h.Cache.Ping(ctx)
 
 	if err != nil {
 		h.Log.Printf("readiness error: %v", err)

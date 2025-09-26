@@ -25,6 +25,7 @@ services:
       - db
       - minio
       - minio-setup
+      - redis
     networks:
       - app-network
     restart: unless-stopped
@@ -87,9 +88,21 @@ services:
     networks:
       - app-network
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"] # для локалки хватает
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   minio_data:
+  redis_data:
 
 networks:
   app-network:

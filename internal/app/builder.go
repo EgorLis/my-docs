@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/EgorLis/my-docs/internal/config"
+	redisx "github.com/EgorLis/my-docs/internal/infra/cache/redis"
 	"github.com/EgorLis/my-docs/internal/infra/database/postgres"
 	s3storage "github.com/EgorLis/my-docs/internal/infra/storage/s3"
 	"github.com/EgorLis/my-docs/internal/transport/web"
@@ -55,8 +56,19 @@ func Build(ctx context.Context) (*App, error) {
 	}
 	_ = s3Log // при желании логируй операции, сейчас не используем
 
+	base.Println("init Redis")
+	rc := redisx.New(redisx.Config{
+		Addr:     cfg.RedisAddr,
+		DB:       cfg.RedisDB,
+		Password: cfg.RedisPassword,
+	})
+	if err := rc.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("failed init redis: %w", err)
+	}
+	base.Println("Redis is initialized")
+
 	base.Println("init Server")
-	server := web.New(serverLog, cfg, pgRepo, s3) // <— передаём s3
+	server := web.New(serverLog, cfg, pgRepo, s3, rc)
 	base.Println("Server is initialized")
 
 	base.Println("build ended")

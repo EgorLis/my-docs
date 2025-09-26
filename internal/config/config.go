@@ -27,6 +27,11 @@ type Config struct {
 	S3SecretKey string `mapstructure:"S3_SECRET_KEY"`
 	S3UseSSL    bool   `mapstructure:"S3_USE_SSL"`
 	S3PathStyle bool   `mapstructure:"S3_PATH_STYLE"`
+
+	// --- Redis ---
+	RedisAddr     string `mapstructure:"REDIS_ADDR"`
+	RedisDB       int    `mapstructure:"REDIS_DB"`
+	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
 }
 
 // String реализует интерфейс Stringer
@@ -64,6 +69,15 @@ func (c *Config) String() string {
 	sb.WriteString(fmt.Sprintf("  S3UseSSL: %v\n", c.S3UseSSL))
 	sb.WriteString(fmt.Sprintf("  S3PathStyle: %v\n", c.S3PathStyle))
 
+	// Redis
+	sb.WriteString(fmt.Sprintf("  RedisAddr: %s\n", c.RedisAddr))
+	sb.WriteString(fmt.Sprintf("  RedisDB: %d\n", c.RedisDB))
+	if c.RedisPassword != "" {
+		sb.WriteString("  RedisPass: ********\n")
+	} else {
+		sb.WriteString("  RedisPass: (empty)\n")
+	}
+
 	return sb.String()
 }
 
@@ -84,7 +98,7 @@ func LoadFromEnv() (*Config, error) {
 		"APP_ENV", "APP_PORT",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SCHEME",
 		"S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY",
-		"S3_USE_SSL", "S3_PATH_STYLE",
+		"S3_USE_SSL", "S3_PATH_STYLE", "REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD",
 	}
 	for _, k := range keys {
 		_ = v.BindEnv(k)

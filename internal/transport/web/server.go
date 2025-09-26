@@ -9,7 +9,6 @@ import (
 	"github.com/EgorLis/my-docs/internal/config"
 	"github.com/EgorLis/my-docs/internal/transport/web/v1/blob"
 	"github.com/EgorLis/my-docs/internal/transport/web/v1/health"
-	//httpSwagger "github.com/swaggo/http-swagger"
 )
 
 type Server struct {
@@ -18,11 +17,11 @@ type Server struct {
 	cfg    *config.Config
 }
 
-func New(logger *log.Logger, cfg *config.Config, db health.DBPinger, bs BlobStorage) *Server {
+func New(logger *log.Logger, cfg *config.Config, db health.Pinger, bs BlobStorage, cache Cache) *Server {
 	healthLog := log.New(logger.Writer(), logger.Prefix()+"[health] ", logger.Flags())
 	blobLog := log.New(logger.Writer(), logger.Prefix()+"[blob] ", logger.Flags())
 
-	healthHandler := &health.Handler{DBPinger: db, Log: healthLog}
+	healthHandler := &health.Handler{DB: db, Cache: cache, Log: healthLog}
 	blobHandler := &blob.Handler{Log: blobLog, Storage: bs}
 
 	srv := &http.Server{

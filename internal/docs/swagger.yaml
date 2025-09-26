@@ -1,0 +1,106 @@
+basePath: /
+info:
+  contact: {}
+  description: API для управления документами
+  title: My Docs API
+  version: "1.0"
+paths:
+  /v1/blob:
+    delete:
+      description: Удаляет объект по его storage key (тем, что вернулся при загрузке).
+      parameters:
+      - description: 'Storage key (например: sha256/ab12cd...)'
+        in: query
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Пример: {\"deleted\":true,\"key\":\"sha256/ab12...\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: missing key
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: delete failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete blob from S3
+      tags:
+      - blob
+    post:
+      consumes:
+      - multipart/form-data
+      description: Принимает файл в multipart/form-data и сохраняет в S3 (MinIO).
+        Возвращает storage key и размер.
+      parameters:
+      - description: Файл для загрузки
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Пример: {\"key\":\"sha256/ab12...\",\"size\":12345}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid multipart | missing file
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: put failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Upload blob to S3
+      tags:
+      - blob
+  /v1/healthz:
+    get:
+      description: Проверка, жив ли сервис (не зависит от БД)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+      summary: Liveness probe
+      tags:
+      - health
+  /v1/readyz:
+    get:
+      description: Проверка готовности сервиса (включая пинг базы данных)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ready
+          schema:
+            type: string
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Readiness probe
+      tags:
+      - health
+swagger: "2.0"
