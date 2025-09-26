@@ -1,0 +1,152 @@
+version: "3"
+
+vars:
+  DOCKER_DIR: deployments/docker
+  ENV_LOCAL: .env
+  ENV_DOCKER: .env.docker
+  ENV_LOCAL_EXAMPLE: configs/.env.example
+  ENV_DOCKER_EXAMPLE: configs/.env.docker.example
+  ENV_ARG: "--env-file ../../{{.ENV_DOCKER}}"
+
+tasks:
+  # 1) Подготовка env-файлов (копирует примеры, если их нет)
+  env:
+    desc: "Скопировать configs/.env*.example в корень (.env, .env.docker), если отсутствуют"
+    cmds:
+      - task: _copy-if-missing
+        vars: { FROM: "{{.ENV_LOCAL_EXAMPLE}}", TO: "{{.ENV_LOCAL}}" }
+      - task: _copy-if-missing
+        vars: { FROM: "{{.ENV_DOCKER_EXAMPLE}}", TO: "{{.ENV_DOCKER}}" }
+
+  # 2) Прогнать юнит-тесты внутри Dockerfile (test-stage) — чисто
+  test:docker:clean:
+    desc: "Docker build target=test (без кэша) — прогонит go test -race внутри Dockerfile"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose build --no-cache test
+
+  # 3) Прогнать юнит-тесты внутри Dockerfile (быстро, с кэшем)
+  test:docker:
+    desc: "Docker build target=test (с кэшем) — прогонит go test -race внутри Dockerfile"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose build test
+
+  # 4) Локальные тесты без Docker (быстрее)
+  test:
+    desc: "go test без race (кросс-платформенно)"
+    cmds:
+      - go test ./... -cover -count=1
+
+  test:race:
+    desc: "go test с -race (нужен CGO + gcc)"
+    env:
+      CGO_ENABLED: "1"
+    cmds:
+      - go test ./... -race -cover -count=1
+
+  # 5) Поднять приложение + БД (со сборкой) с использованием .env.docker
+  up:
+    desc: "docker compose up --build (используя .env.docker)"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose {{.ENV_ARG}} up --build
+
+  # 6) То же, но в фоне
+  up:detached:
+    desc: "docker compose up -d --build (используя .env.docker)"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose {{.ENV_ARG}} up --build -d
+
+  # 7) Остановить и удалить контейнеры/сеть (volume с данными Postgres сохраняется)
+  down:
+    desc: "docker compose down"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose down
+
+  # 8) Полностью снести контейнеры + volume (postgres_data)
+  down:volumes:
+    desc: "docker compose down -v (сносит контейнеры и volumes, включая postgres_data)"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose down -v
+
+  # 9) Только остановить
+  stop:
+    desc: "docker compose stop"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose stop
+
+  # 10) Удалить контейнеры (volume не трогаем)
+  rm:
+    desc: "docker compose rm -f"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose rm -f
+
+  # 11) Логи
+  logs:
+    desc: "docker compose logs -f"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose logs -f
+
+  # 12) Статус контейнеров
+  ps:
+    desc: "docker compose ps"
+    dir: "{{.DOCKER_DIR}}"
+    cmds:
+      - docker compose ps
+
+  # 13) Почистить dangling-образы
+  clean:
+    desc: "docker image prune -f"
+    cmds:
+      - docker image prune -f
+
+  # 14) Установить swag (если не установлен)
+  swagger:install:
+    desc: "Установить swag (генератор swagger-доков)"
+    cmds:
+      - |
+        if command -v swag >/dev/null 2>&1; then
+          echo "✓ swag уже установлен"; exit 0;
+        fi
+        echo "→ installing swag..."
+        go install github.com/swaggo/swag/cmd/swag@latest
+        echo "✓ swag установлен. Убедись, что $(go env GOPATH)/bin в PATH"
+
+  # 15) Сгенерировать swagger (swagger.json/yaml + docs.go)
+  swagger:
+    desc: "Сгенерировать swagger-доки (internal/docs)"
+    deps: [swagger:install]
+    cmds:
+      # Генерим из main-файла, парсим cmd и internal чтобы найти все аннотации
+      - swag init -g cmd/my-subs/main.go -o internal/docs -d ./cmd,./internal
+    sources:
+      # при изменении хендлеров/комментариев эта задача будет пересобираться
+      - cmd/**/*
+      - internal/**/*
+    generates:
+      - internal/docs/docs.go
+      - internal/docs/swagger.json
+      - internal/docs/swagger.yaml
+
+  # Внутренний helper: копирует файл если отсутствует (кроссплатформенно)
+  _copy-if-missing:
+    internal: true
+    silent: true
+    requires:
+      vars: [FROM, TO]
+    cmds:
+      - |
+        if [ ! -f "{{.TO}}" ]; then
+          echo "→ creating {{.TO}} from {{.FROM}}"
+          cp "{{.FROM}}" "{{.TO}}" 2>/dev/null || powershell -Command "Copy-Item '{{.FROM}}' '{{.TO}}'"
+        else
+          echo "✓ {{.TO}} already exists, skip"
+        fi
+    platforms: [linux, darwin, windows]

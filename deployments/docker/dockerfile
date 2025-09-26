@@ -1,0 +1,35 @@
+# =============== Base ===============
+FROM golang:1.25 AS base
+WORKDIR /src
+# НЕ фиксируем CGO здесь, чтобы стейджи могли переопределять
+COPY go.mod go.sum ./
+RUN go mod download
+
+# =============== Test ===============
+FROM golang:1.25 AS test
+WORKDIR /src
+# Включаем CGO и ставим gcc для -race
+ENV CGO_ENABLED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go test ./... -race -coverprofile=/tmp/coverage.out
+
+# =============== Builder ===============
+FROM golang:1.25 AS builder
+WORKDIR /src
+ENV CGO_ENABLED=0
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=linux GOARCH=amd64 go build -o /out/my-docs ./cmd/my-docs
+
+# =============== Runtime ===============
+FROM alpine:latest AS runtime
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /out/my-docs /app/my-docs
+CMD ["/app/my-docs"]
