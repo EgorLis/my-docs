@@ -3,30 +3,86 @@ package web
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	_ "github.com/EgorLis/my-docs/internal/docs"
+	"github.com/EgorLis/my-docs/internal/domain"
 	"github.com/EgorLis/my-docs/internal/transport/web/mw"
-	"github.com/EgorLis/my-docs/internal/transport/web/v1/blob"
+	v1 "github.com/EgorLis/my-docs/internal/transport/web/v1"
+	"github.com/EgorLis/my-docs/internal/transport/web/v1/auth"
+	"github.com/EgorLis/my-docs/internal/transport/web/v1/doc"
 	"github.com/EgorLis/my-docs/internal/transport/web/v1/health"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
-func newRouter(hh *health.Handler, bh *blob.Handler, logger *log.Logger) http.Handler {
+func newRouter(s *Server) http.Handler {
+	healthLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[health] ", s.logger.Flags())
+	authLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[auth] ", s.logger.Flags())
+
+	hh := &health.Handler{DB: s.repos.Users, Cache: s.cache, Log: healthLog}
+	reg := &auth.HandlerRegister{Log: authLog, Users: s.repos.Users,
+		Hasher: s.auth.Hasher, AdminToken: s.cfg.AdminToken}
+
+	loginH := &auth.HandlerLogin{
+		Log:    authLog,
+		Users:  s.repos.Users,
+		Hasher: s.auth.Hasher,
+		Tokens: s.auth.Tokens,
+	}
+	logoutH := &auth.HandlerLogout{
+		Log:       authLog,
+		Tokens:    s.auth.Tokens,
+		Blacklist: s.auth.Blacklist,
+	}
+
+	// --- docs ---
+	docsLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[docs] ", s.logger.Flags())
+	dh := &doc.Handler{
+		Log:     docsLog,
+		Users:   s.repos.Users,
+		Docs:    s.repos.Docs,
+		Shares:  s.repos.Shares,
+		Storage: s.store,
+		Cache:   s.cache,
+		ListTTL: 60, // сек
+		DocTTL:  60,
+	}
+
 	mux := http.NewServeMux()
 
 	// health
 	mux.HandleFunc("GET /v1/healthz", hh.Liveness)
 	mux.HandleFunc("GET /v1/readyz", hh.Readiness)
 
-	// blob test
-	mux.HandleFunc("POST /v1/blob", limitBody(64<<20, bh.Upload)) // 64MB лимит
-	mux.HandleFunc("DELETE /v1/blob", bh.Delete)                  // ?key=sha256%2F...
+	// auth
+	mux.HandleFunc("POST /api/register", reg.Register)
+	mux.HandleFunc("POST /api/auth", loginH.Login)
+	mux.HandleFunc("DELETE /api/auth/", logoutH.Logout) // DELETE /api/auth/{token}
+
+	// защищаем Bearer-ом приватные ручки:
+	// Upload, List, GetOne, Delete
+	protected := mw.RequireAuth(mw.AuthDeps{Tokens: s.auth.Tokens, Blacklist: s.auth.Blacklist}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/docs":
+			dh.Upload(w, r)
+		case (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/api/docs":
+			dh.List(w, r)
+		case (r.Method == http.MethodGet || r.Method == http.MethodHead) && strings.HasPrefix(r.URL.Path, "/api/docs/"):
+			dh.GetOne(w, r)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/docs/"):
+			dh.Delete(w, r)
+		default:
+			v1.WriteDomainError(w, r, domain.ErrMethodNotAllowed)
+		}
+	}))
+	mux.Handle("/api/docs", protected)
+	mux.Handle("/api/docs/", protected)
 
 	// swagger
 	mux.Handle("GET /swagger/", httpSwagger.WrapHandler)
 
 	// 🔗 middleware
-	return mw.WithRequestID(mw.Logging(logger)(mux))
+	return mw.WithRequestID(mw.Logging(s.logger)(mux))
 }
 
 func limitBody(n int64, h http.HandlerFunc) http.HandlerFunc {

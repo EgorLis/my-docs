@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
@@ -32,6 +33,12 @@ type Config struct {
 	RedisAddr     string `mapstructure:"REDIS_ADDR"`
 	RedisDB       int    `mapstructure:"REDIS_DB"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
+
+	// --- Auth ---
+	AdminToken    string        `mapstructure:"ADMIN_TOKEN"`
+	AuthJWTSecret string        `mapstructure:"AUTH_JWT_SECRET"`
+	AuthTokenTTL  time.Duration `mapstructure:"AUTH_TOKEN_TTL"` // напр. "15m", "24h"
+	AuthIssuer    string        `mapstructure:"AUTH_ISSUER"`    // напр. "my-docs"
 }
 
 // String реализует интерфейс Stringer
@@ -78,6 +85,16 @@ func (c *Config) String() string {
 		sb.WriteString("  RedisPass: (empty)\n")
 	}
 
+	// Auth
+	sb.WriteString(fmt.Sprintf("  AuthIssuer: %s\n", c.AuthIssuer))
+	if c.AuthJWTSecret != "" {
+		sb.WriteString("  AuthJWTSecret: ********\n")
+	} else {
+		sb.WriteString("  AuthJWTSecret: (empty)\n")
+	}
+	sb.WriteString(fmt.Sprintf("  AuthTokenTTL: %s\n", c.AuthTokenTTL))
+	sb.WriteString(fmt.Sprintf("  AdminToken: %s\n", mask(c.AdminToken)))
+
 	return sb.String()
 }
 
@@ -99,6 +116,7 @@ func LoadFromEnv() (*Config, error) {
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SCHEME",
 		"S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY",
 		"S3_USE_SSL", "S3_PATH_STYLE", "REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD",
+		"ADMIN_TOKEN", "AUTH_JWT_SECRET", "AUTH_TOKEN_TTL", "AUTH_ISSUER",
 	}
 	for _, k := range keys {
 		_ = v.BindEnv(k)
@@ -120,4 +138,11 @@ func (c *Config) GetDSN() string {
 		c.DBPort,
 		c.DBName,
 	)
+}
+
+func mask(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
 }

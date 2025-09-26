@@ -5,34 +5,30 @@ import (
 	"time"
 )
 
-// Требования ТЗ:
-// - /api/auth -> выдать токен
-// - /api/auth/<token> [DELETE] -> завершить сессию (инвалидация)
-// Предлагаем контракты менеджера токенов и хранилища «блэклиста».
-
-type Token string
+// Токен и клеймы
+type Token = string
 
 type TokenClaims struct {
-	JTI       string // уникальный id токена
+	JTI       string
 	UserID    UserID
 	Login     string
 	IssuedAt  time.Time
 	ExpiresAt time.Time
 }
 
-// Хеширование паролей
+// Hash/Verify — строковые (argon2id)
 type PasswordHasher interface {
-	Hash(plain string) ([]byte, error)
-	Verify(plain string, hash []byte) bool
+	Hash(plain string) (string, error)
+	Verify(plain, encodedHash string) (bool, error)
 }
 
-// Управление токенами (JWT/PASETO — реализация где-нибудь в internal/auth)
+// JWT/PASETO менеджер — TTL конфигурируется при создании менеджера
 type TokenManager interface {
-	Issue(ctx context.Context, u User, ttl time.Duration) (Token, TokenClaims, error)
-	Parse(ctx context.Context, t Token) (TokenClaims, error)
+	Issue(ctx context.Context, userID UserID, login string) (Token, TokenClaims, error)
+	Parse(ctx context.Context, raw Token) (TokenClaims, error)
 }
 
-// Блэклист/ревокация токенов (например, Redis)
+// Блэклист (logout)
 type TokenBlacklist interface {
 	Revoke(ctx context.Context, jti string, exp time.Time) error
 	IsRevoked(ctx context.Context, jti string) (bool, error)

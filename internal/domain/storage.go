@@ -16,7 +16,11 @@ type BlobStorage interface {
 	// Сохранение нового файла (возвращает ключ/размер/хэш)
 	Put(ctx context.Context, r io.Reader, hintName string, mime string) (BlobPutResult, error)
 	// Получение контента для отдачи клиенту (stream)
-	Get(ctx context.Context, storageKey string, rangeHeader string) (rc io.ReadCloser, contentLen int64, contentRange string, err error)
+	Get(
+		ctx context.Context,
+		storageKey string,
+		rangeHeader string,
+	) (rc io.ReadCloser, contentLen int64, contentRange, contentType, etag string, err error)
 	// Удаление
 	Delete(ctx context.Context, storageKey string) error
 }

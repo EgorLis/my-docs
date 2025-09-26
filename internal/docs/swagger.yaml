@@ -1,76 +1,322 @@
 basePath: /
+definitions:
+  auth.loginRequest:
+    properties:
+      login:
+        type: string
+      pswd:
+        type: string
+    type: object
+  auth.loginResponse:
+    properties:
+      token:
+        type: string
+    type: object
+  auth.logoutResponse:
+    properties:
+      revoked:
+        description: jti
+        type: string
+    type: object
+  auth.registerRequest:
+    properties:
+      login:
+        type: string
+      pswd:
+        type: string
+      token:
+        description: админ-токен (из конфига)
+        type: string
+    type: object
+  auth.registerResponse:
+    properties:
+      login:
+        type: string
+    type: object
+  domain.APIEnvelope:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/domain.APIError'
+      response: {}
+    type: object
+  domain.APIError:
+    properties:
+      code:
+        type: integer
+      text:
+        type: string
+    type: object
 info:
   contact: {}
   description: API для управления документами
   title: My Docs API
   version: "1.0"
 paths:
-  /v1/blob:
-    delete:
-      description: Удаляет объект по его storage key (тем, что вернулся при загрузке).
+  /api/auth:
+    post:
+      consumes:
+      - application/json
+      description: Возвращает JWT при валидных логине и пароле.
       parameters:
-      - description: 'Storage key (например: sha256/ab12cd...)'
-        in: query
-        name: key
+      - description: login, pswd
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                response:
+                  $ref: '#/definitions/auth.loginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Authenticate user
+      tags:
+      - auth
+  /api/auth/{token}:
+    delete:
+      description: 'Завершает сессию: помечает токен как отозванный до истечения exp.'
+      parameters:
+      - description: JWT token (raw)
+        in: path
+        name: token
         required: true
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: 'Пример: {\"deleted\":true,\"key\":\"sha256/ab12...\"}'
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                response:
+                  $ref: '#/definitions/auth.logoutResponse'
+              type: object
         "400":
-          description: missing key
+          description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/domain.APIEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
         "500":
-          description: delete failed
+          description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Delete blob from S3
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Logout (revoke token)
       tags:
-      - blob
+      - auth
+  /api/docs:
+    get:
+      parameters:
+      - description: owner login (optional)
+        in: query
+        name: login
+        type: string
+      - description: filter key (name|mime)
+        in: query
+        name: key
+        type: string
+      - description: filter value
+        in: query
+        name: value
+        type: string
+      - description: limit
+        in: query
+        name: limit
+        type: integer
+      - description: name|created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: List documents
+      tags:
+      - docs
     post:
       consumes:
       - multipart/form-data
-      description: Принимает файл в multipart/form-data и сохраняет в S3 (MinIO).
-        Возвращает storage key и размер.
+      description: 'multipart: meta(json), json(optional), file(optional)'
       parameters:
-      - description: Файл для загрузки
+      - description: JSON meta
+        in: formData
+        name: meta
+        required: true
+        type: string
+      - description: JSON body
+        in: formData
+        name: json
+        type: string
+      - description: file
         in: formData
         name: file
-        required: true
         type: file
       produces:
       - application/json
       responses:
         "200":
-          description: 'Пример: {\"key\":\"sha256/ab12...\",\"size\":12345}'
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                data:
+                  type: object
+              type: object
         "400":
-          description: invalid multipart | missing file
+          description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/domain.APIEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
         "500":
-          description: put failed
+          description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Upload blob to S3
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Upload new document
       tags:
-      - blob
+      - docs
+  /api/docs/{id}:
+    delete:
+      parameters:
+      - description: document id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                response:
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Delete document (owner only)
+      tags:
+      - docs
+    get:
+      parameters:
+      - description: document id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: when file
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Get single document or file
+      tags:
+      - docs
+  /api/register:
+    post:
+      consumes:
+      - application/json
+      description: Регистрация нового пользователя (доступно только по admin-token
+        из конфига).
+      parameters:
+      - description: token, login, pswd
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                response:
+                  $ref: '#/definitions/auth.registerResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Register new user
+      tags:
+      - auth
   /v1/healthz:
     get:
       description: Проверка, жив ли сервис (не зависит от БД)

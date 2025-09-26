@@ -30,14 +30,6 @@ services:
       - app-network
     restart: unless-stopped
 
-  test:
-    build:
-      context: ../..
-      dockerfile: deployments/docker/Dockerfile
-      target: test
-    networks:
-      - app-network
-
   db:
     image: postgres:16-alpine
     environment:

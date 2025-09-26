@@ -7,6 +7,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/EgorLis/my-docs/internal/auth/blacklist"
+	"github.com/EgorLis/my-docs/internal/auth/password"
+	"github.com/EgorLis/my-docs/internal/auth/token"
 	"github.com/EgorLis/my-docs/internal/config"
 	redisx "github.com/EgorLis/my-docs/internal/infra/cache/redis"
 	"github.com/EgorLis/my-docs/internal/infra/database/postgres"
@@ -67,8 +70,15 @@ func Build(ctx context.Context) (*App, error) {
 	}
 	base.Println("Redis is initialized")
 
+	// Auth primitives
+	hasher := password.NewDefault()
+	tm := token.New(cfg.AuthJWTSecret, cfg.AuthIssuer, cfg.AuthTokenTTL)
+	blacklist := blacklist.NewStore(rc, "jti:")
+
 	base.Println("init Server")
-	server := web.New(serverLog, cfg, pgRepo, s3, rc)
+	rep := web.Repos{Users: pgRepo, Docs: pgRepo, Shares: pgRepo}
+	auth := web.AuthDeps{Hasher: hasher, Tokens: tm, Blacklist: blacklist}
+	server := web.New(serverLog, cfg, rep, auth, s3, rc)
 	base.Println("Server is initialized")
 
 	base.Println("build ended")

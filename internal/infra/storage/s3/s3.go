@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/EgorLis/my-docs/internal/domain"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -45,7 +46,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 }
 
 // Put загружает поток и возвращает итоговый ключ вида "sha256/<hex>" и размер.
-func (s *Storage) Put(ctx context.Context, r io.Reader, hintName, mime string) (storageKey string, size int64, sha []byte, err error) {
+func (s *Storage) Put(ctx context.Context, r io.Reader, hintName string, mime string) (domain.BlobPutResult, error) {
 	h := sha256.New()
 	pr, pw := io.Pipe()
 	mw := io.MultiWriter(h, pw)
@@ -61,58 +62,97 @@ func (s *Storage) Put(ctx context.Context, r io.Reader, hintName, mime string) (
 		ContentType: mime,
 	})
 	if err != nil {
-		return "", 0, nil, err
+		return domain.BlobPutResult{StorageKey: "", Size: 0, SHA256: nil}, err
 	}
 
-	sha = h.Sum(nil)
+	sha := h.Sum(nil)
 	finalKey := fmt.Sprintf("sha256/%x", sha)
 	if finalKey != tmpKey {
 		src := minio.CopySrcOptions{Bucket: s.bucket, Object: tmpKey}
 		dst := minio.CopyDestOptions{Bucket: s.bucket, Object: finalKey}
 		if _, err := s.cl.CopyObject(ctx, dst, src); err != nil {
 			_ = s.cl.RemoveObject(ctx, s.bucket, tmpKey, minio.RemoveObjectOptions{})
-			return "", 0, nil, err
+			return domain.BlobPutResult{StorageKey: "", Size: 0, SHA256: nil}, err
 		}
 		_ = s.cl.RemoveObject(ctx, s.bucket, tmpKey, minio.RemoveObjectOptions{})
 	}
-	return finalKey, info.Size, sha, nil
+	return domain.BlobPutResult{StorageKey: finalKey, Size: info.Size, SHA256: sha}, nil
 }
 
-// Get открывает поток для чтения. rangeHeader формата "bytes=0-1023" (опц.).
-func (s *Storage) Get(ctx context.Context, storageKey, rangeHeader string) (rc io.ReadCloser, contentLen int64, contentRange string, err error) {
-	opts := minio.GetObjectOptions{}
+// Get открывает поток для чтения.
+// rangeHeader в формате "bytes=START-END" (опционально).
+// Возвращает поток, длину отдаваемого тела (полного или диапазона),
+// Content-Range (если был запрошен диапазон), Content-Type и ETag.
+func (s *Storage) Get(
+	ctx context.Context,
+	storageKey string,
+	rangeHeader string,
+) (rc io.ReadCloser, contentLen int64, contentRange, contentType, etag string, err error) {
+
+	// 1) HEAD: базовая мета (размер всего объекта, content-type, etag)
+	info, err := s.cl.StatObject(ctx, s.bucket, storageKey, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, 0, "", "", "", err
+	}
+	totalSize := info.Size
+	contentType = info.ContentType
+	etag = info.ETag
+
+	// 2) Парс диапазона (если есть)
+	var (
+		start, end int64
+		useRange   bool
+	)
 	if strings.HasPrefix(rangeHeader, "bytes=") {
-		rg := strings.TrimPrefix(rangeHeader, "bytes=")
-		parts := strings.Split(rg, "-")
-		var a, b *int64
-		if len(parts) == 2 {
-			if parts[0] != "" {
-				if v, e := strconv.ParseInt(parts[0], 10, 64); e == nil {
-					a = &v
+		spec := strings.TrimPrefix(rangeHeader, "bytes=")
+		parts := strings.SplitN(spec, "-", 2)
+
+		switch {
+		// bytes=A-B
+		case len(parts) == 2 && parts[0] != "" && parts[1] != "":
+			if a, e1 := strconv.ParseInt(parts[0], 10, 64); e1 == nil {
+				if b, e2 := strconv.ParseInt(parts[1], 10, 64); e2 == nil && a >= 0 && b >= a {
+					start, end, useRange = a, b, true
 				}
 			}
-			if parts[1] != "" {
-				if v, e := strconv.ParseInt(parts[1], 10, 64); e == nil {
-					b = &v
-				}
+
+		// bytes=A-  (от A до конца)
+		case len(parts) == 2 && parts[0] != "" && parts[1] == "":
+			if a, e := strconv.ParseInt(parts[0], 10, 64); e == nil && a >= 0 {
+				start, end, useRange = a, totalSize-1, true
 			}
-		}
-		if a != nil || b != nil {
-			if err := opts.SetRange(getVal(a), getVal(b)); err != nil {
-				return nil, 0, "", err
+
+		// bytes=-N  (последние N байт)
+		case len(parts) == 2 && parts[0] == "" && parts[1] != "":
+			if n, e := strconv.ParseInt(parts[1], 10, 64); e == nil && n > 0 {
+				if n > totalSize {
+					n = totalSize
+				}
+				start, end, useRange = totalSize-n, totalSize-1, true
 			}
 		}
 	}
+
+	opts := minio.GetObjectOptions{}
+	if useRange {
+		// NB: SetRange принимает включающие границы [start, end]
+		if e := opts.SetRange(start, end); e != nil {
+			return nil, 0, "", "", "", e
+		}
+		contentLen = (end - start + 1)
+		contentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, totalSize)
+	} else {
+		contentLen = totalSize
+	}
+
+	// 3) Получаем поток
 	obj, err := s.cl.GetObject(ctx, s.bucket, storageKey, opts)
 	if err != nil {
-		return nil, 0, "", err
+		return nil, 0, "", "", "", err
 	}
-	st, err := obj.Stat()
-	if err != nil {
-		_ = obj.Close()
-		return nil, 0, "", err
-	}
-	return obj, st.Size, st.Metadata.Get("Content-Range"), nil
+	// (не вызываем Stat на объекте — вся нужная мета уже есть из HEAD)
+
+	return obj, contentLen, contentRange, contentType, etag, nil
 }
 
 func (s *Storage) Delete(ctx context.Context, storageKey string) error {
