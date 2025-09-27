@@ -3,6 +3,8 @@ package blacklist
 import (
 	"context"
 	"time"
+
+	"github.com/EgorLis/my-docs/internal/domain"
 )
 
 // KV — минимальный интерфейс, который нам нужен от кеша.
@@ -23,7 +25,7 @@ func NewStore(kv KV, prefix string) *Store {
 	return &Store{kv: kv, prefix: prefix}
 }
 
-func (s *Store) key(jti string) string { return s.prefix + jti }
+func (s *Store) key(jti string) string { return domain.CacheKeyTokenJTI(jti) }
 
 // Revoke помечает jti отозванным до времени exp (TTL = exp-now).
 func (s *Store) Revoke(ctx context.Context, jti string, exp time.Time) error {

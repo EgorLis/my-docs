@@ -151,7 +151,12 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: name|created
+      - description: Sort order
+        enum:
+        - name_asc
+        - name_desc
+        - created_asc
+        - created_desc
         in: query
         name: sort
         type: string
@@ -177,7 +182,8 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: 'multipart: meta(json), json(optional), file(optional)'
+      description: 'multipart/form-data: meta(JSON), json(JSON, optional), file(binary,
+        optional)'
       parameters:
       - description: 'Auth token (alternative to Authorization: Bearer)'
         in: query
@@ -188,11 +194,11 @@ paths:
         name: meta
         required: true
         type: string
-      - description: JSON body
+      - description: Any JSON
         in: formData
         name: json
         type: string
-      - description: file
+      - description: Документ (макс. 1ГБ)
         in: formData
         name: file
         type: file
@@ -289,6 +295,46 @@ paths:
       summary: Get single document or file
       tags:
       - docs
+  /api/healthz:
+    get:
+      description: Проверка, жив ли сервис (не зависит от БД/кэша)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                data:
+                  type: string
+              type: object
+      summary: Liveness probe
+      tags:
+      - health
+  /api/readyz:
+    get:
+      description: Проверка готовности сервиса (включая пинг БД и Redis)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/domain.APIEnvelope'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/domain.APIEnvelope'
+      summary: Readiness probe
+      tags:
+      - health
   /api/register:
     post:
       consumes:
@@ -333,36 +379,4 @@ paths:
       summary: Register new user
       tags:
       - auth
-  /v1/healthz:
-    get:
-      description: Проверка, жив ли сервис (не зависит от БД)
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: ok
-          schema:
-            type: string
-      summary: Liveness probe
-      tags:
-      - health
-  /v1/readyz:
-    get:
-      description: Проверка готовности сервиса (включая пинг базы данных)
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: ready
-          schema:
-            type: string
-        "503":
-          description: Service Unavailable
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Readiness probe
-      tags:
-      - health
 swagger: "2.0"

@@ -11,6 +11,7 @@ import (
 	"github.com/EgorLis/my-docs/internal/auth/password"
 	"github.com/EgorLis/my-docs/internal/auth/token"
 	"github.com/EgorLis/my-docs/internal/config"
+	"github.com/EgorLis/my-docs/internal/domain"
 	redisx "github.com/EgorLis/my-docs/internal/infra/cache/redis"
 	"github.com/EgorLis/my-docs/internal/infra/database/postgres"
 	s3storage "github.com/EgorLis/my-docs/internal/infra/storage/s3"
@@ -18,9 +19,12 @@ import (
 )
 
 type App struct {
-	config *config.Config
-	server *web.Server
-	log    *log.Logger
+	config  *config.Config
+	server  *web.Server
+	log     *log.Logger
+	storage domain.BlobStorage
+	cache   domain.Cache
+	repo    domain.UsersRepo
 }
 
 func Build(ctx context.Context) (*App, error) {
@@ -29,6 +33,7 @@ func Build(ctx context.Context) (*App, error) {
 	serverLog := log.New(base.Writer(), base.Prefix()+"[server] ", base.Flags())
 	pgLog := log.New(base.Writer(), base.Prefix()+"[postgres] ", base.Flags())
 	s3Log := log.New(base.Writer(), base.Prefix()+"[s3] ", base.Flags())
+	redisLog := log.New(base.Writer(), base.Prefix()+"[redis] ", base.Flags())
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -53,18 +58,17 @@ func Build(ctx context.Context) (*App, error) {
 		UseSSL:    cfg.S3UseSSL,
 		PathStyle: cfg.S3PathStyle,
 	}
-	s3, err := s3storage.New(ctx, s3cfg)
+	s3, err := s3storage.New(ctx, s3cfg, s3Log)
 	if err != nil {
 		return nil, fmt.Errorf("failed init s3: %w", err)
 	}
-	_ = s3Log // при желании логируй операции, сейчас не используем
 
 	base.Println("init Redis")
 	rc := redisx.New(redisx.Config{
 		Addr:     cfg.RedisAddr,
 		DB:       cfg.RedisDB,
 		Password: cfg.RedisPassword,
-	})
+	}, redisLog)
 	if err := rc.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("failed init redis: %w", err)
 	}
@@ -82,7 +86,13 @@ func Build(ctx context.Context) (*App, error) {
 	base.Println("Server is initialized")
 
 	base.Println("build ended")
-	return &App{config: cfg, server: server, log: base}, nil
+	return &App{
+		config:  cfg,
+		server:  server,
+		log:     base,
+		storage: s3,
+		repo:    pgRepo,
+		cache:   rc}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
@@ -94,5 +104,8 @@ func (a *App) Run(ctx context.Context) error {
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	a.server.Close(stopCtx)
+	a.repo.Close()
+	a.cache.Close()
+
 	return nil
 }

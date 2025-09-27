@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/EgorLis/my-docs/internal/domain"
+	"github.com/EgorLis/my-docs/internal/transport/web/logx"
+	"github.com/EgorLis/my-docs/internal/transport/web/mw"
 	v1 "github.com/EgorLis/my-docs/internal/transport/web/v1"
 )
 
@@ -39,7 +41,12 @@ type loginResponse struct {
 // @Failure     500 {object} domain.APIEnvelope
 // @Router      /api/auth [post]
 func (h *HandlerLogin) Login(w http.ResponseWriter, r *http.Request) {
+	const op = "auth.login"
+	reqID := mw.RequestIDFromCtx(r.Context())
+	logx.Info(h.Log, reqID, op, "start", "method", r.Method, "path", r.URL.Path)
+
 	if r.Method != http.MethodPost {
+		logx.Error(h.Log, reqID, op, "method not allowed", domain.ErrMethodNotAllowed, "method", r.Method)
 		v1.WriteDomainError(w, r, domain.ErrMethodNotAllowed)
 		return
 	}
@@ -48,7 +55,7 @@ func (h *HandlerLogin) Login(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "application/json") {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			h.Log.Printf("auth: bad json: %v", err)
+			logx.Error(h.Log, reqID, op, "bad json", err)
 			v1.WriteDomainError(w, r, domain.ErrBadParams)
 			return
 		}
@@ -60,6 +67,7 @@ func (h *HandlerLogin) Login(w http.ResponseWriter, r *http.Request) {
 
 	// простая проверка наличия полей (строгая валидация логина/пароля была на регистрации)
 	if req.Login == "" || req.Pswd == "" {
+		logx.Error(h.Log, reqID, op, "empty login or pswd", domain.ErrBadParams)
 		v1.WriteDomainError(w, r, domain.ErrBadParams)
 		return
 	}
@@ -67,7 +75,7 @@ func (h *HandlerLogin) Login(w http.ResponseWriter, r *http.Request) {
 	// достаём пользователя
 	u, err := h.Users.UserByLogin(r.Context(), req.Login)
 	if err != nil {
-		h.Log.Printf("auth: user not found: %v", err)
+		logx.Error(h.Log, reqID, op, "user not found", err, "login", req.Login)
 		v1.WriteDomainError(w, r, domain.ErrUnauth)
 		return
 	}
@@ -75,9 +83,7 @@ func (h *HandlerLogin) Login(w http.ResponseWriter, r *http.Request) {
 	// сверяем пароль
 	ok, err := h.Hasher.Verify(req.Pswd, string(u.PassHash))
 	if err != nil || !ok {
-		if err != nil {
-			h.Log.Printf("auth: verify err: %v", err)
-		}
+		logx.Error(h.Log, reqID, op, "password verify failed", err, "login", req.Login)
 		v1.WriteDomainError(w, r, domain.ErrUnauth)
 		return
 	}
@@ -85,10 +91,11 @@ func (h *HandlerLogin) Login(w http.ResponseWriter, r *http.Request) {
 	// выдаём токен
 	token, _, err := h.Tokens.Issue(r.Context(), u.ID, u.Login)
 	if err != nil {
-		h.Log.Printf("auth: issue token err: %v", err)
+		logx.Error(h.Log, reqID, op, "issue token failed", err, "user_id", u.ID, "login", u.Login)
 		v1.WriteDomainError(w, r, domain.ErrUnexpected)
 		return
 	}
 
+	logx.Info(h.Log, reqID, op, "ok", "user_id", u.ID, "login", u.Login)
 	v1.WriteOKResponse(w, r, loginResponse{Token: token})
 }

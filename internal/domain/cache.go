@@ -16,4 +16,5 @@ type Cache interface {
 	// Для инкрементируемых версий списков (выборочная инвалидация)
 	Incr(ctx context.Context, key string) (int64, error)
 	Ping(context.Context) error
+	Close()
 }

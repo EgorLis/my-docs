@@ -23,4 +23,6 @@ type BlobStorage interface {
 	) (rc io.ReadCloser, contentLen int64, contentRange, contentType, etag string, err error)
 	// Удаление
 	Delete(ctx context.Context, storageKey string) error
+	// Проверка доступности хранилища
+	Ping(ctx context.Context) error
 }

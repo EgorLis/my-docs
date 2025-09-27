@@ -1,12 +1,12 @@
 package doc
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/url"
-	srt "sort"
-	"strings"
 	"time"
 
 	"github.com/EgorLis/my-docs/internal/domain"
@@ -22,35 +22,37 @@ func weakETag(version int64, sha []byte) string {
 
 func httpTime(t time.Time) string { return t.UTC().Format(time.RFC1123) }
 
-// формирует стабильный ключ для кэша списка
-func listCacheKey(me domain.UserID, login, key, value, sort string, limit int) string {
-	parts := []string{
-		"user=" + me.String(),
-		"login=" + login,
-		"key=" + key,
-		"value=" + value,
-		"sort=" + sort,
-		fmt.Sprintf("limit=%d", limit),
-	}
-	srt.Strings(parts)
-	return "list:" + sha256hex(strings.Join(parts, "&"))
+// pageKey = хэш фильтров/сортировки/лимита, чтобы был компактный и стабильный
+func makeListPageKey(login, key, val, sort string, limit int) string {
+	h := sha1.New()
+	// важно: явно разделять поля
+	io.WriteString(h, "login="+login+";")
+	io.WriteString(h, "key="+key+";")
+	io.WriteString(h, "val="+val+";")
+	io.WriteString(h, "sort="+sort+";")
+	io.WriteString(h, fmt.Sprintf("limit=%d;", limit))
+	return hex.EncodeToString(h.Sum(nil))
 }
-
-func docMetaKey(id domain.DocID) string { return "docmeta:" + id.String() }
-func docJSONKey(id domain.DocID) string { return "docjson:" + id.String() }
 
 func sha256hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
 
-// простая нормализация key/sort из ТЗ
-func normalizeSort(s string) string {
+// принимает строку из query (?sort=...) и мапит к domain.ListSort.
+// дефолт: created_desc
+func normalizeSort(s string) domain.ListSort {
 	switch s {
-	case "name", "created":
-		return s
+	case "name_asc":
+		return domain.SortByNameAsc
+	case "name_desc":
+		return domain.SortByNameDesc
+	case "created_asc":
+		return domain.SortByCreatedAsc
+	case "created_desc":
+		return domain.SortByCreatedDesc
 	default:
-		return "name"
+		return domain.SortByCreatedDesc
 	}
 }
 

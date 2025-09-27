@@ -179,8 +179,14 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "name_asc",
+                            "name_desc",
+                            "created_asc",
+                            "created_desc"
+                        ],
                         "type": "string",
-                        "description": "name|created",
+                        "description": "Sort order",
                         "name": "sort",
                         "in": "query"
                     }
@@ -213,7 +219,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "multipart: meta(json), json(optional), file(optional)",
+                "description": "multipart/form-data: meta(JSON), json(JSON, optional), file(binary, optional)",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -240,13 +246,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "JSON body",
+                        "description": "Any JSON",
                         "name": "json",
                         "in": "formData"
                     },
                     {
                         "type": "file",
-                        "description": "file",
+                        "description": "Документ (макс. 1ГБ)",
                         "name": "file",
                         "in": "formData"
                     }
@@ -396,6 +402,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/healthz": {
+            "get": {
+                "description": "Проверка, жив ли сервис (не зависит от БД/кэша)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/domain.APIEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/readyz": {
+            "get": {
+                "description": "Проверка готовности сервиса (включая пинг БД и Redis)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/domain.APIEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/domain.APIEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/register": {
             "post": {
                 "description": "Регистрация нового пользователя (доступно только по admin-token из конфига).",
@@ -461,55 +537,6 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/domain.APIEnvelope"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/healthz": {
-            "get": {
-                "description": "Проверка, жив ли сервис (не зависит от БД)",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "health"
-                ],
-                "summary": "Liveness probe",
-                "responses": {
-                    "200": {
-                        "description": "ok",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/readyz": {
-            "get": {
-                "description": "Проверка готовности сервиса (включая пинг базы данных)",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "health"
-                ],
-                "summary": "Readiness probe",
-                "responses": {
-                    "200": {
-                        "description": "ready",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
                         }
                     }
                 }

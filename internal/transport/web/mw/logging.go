@@ -15,13 +15,10 @@ func Logging(l *log.Logger) func(http.Handler) http.Handler {
 
 			mw := &metaWriter{ResponseWriter: w}
 
-			l.Printf("lvl=info event=start req_id=%s proto=%s method=%s path=%q remote=%s ua=%q",
-				reqID, r.Proto, r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent())
-
 			next.ServeHTTP(mw, r)
 
 			dur := time.Since(start)
-			l.Printf("lvl=info event=finish req_id=%s method=%s path=%q status=%d size=%d duration_ms=%d",
+			l.Printf("lvl=info req_id=%s method=%s path=%q status=%d size=%d duration_ms=%d",
 				reqID, r.Method, r.URL.Path, mw.status, mw.size, dur.Milliseconds())
 		})
 	}

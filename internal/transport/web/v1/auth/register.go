@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/EgorLis/my-docs/internal/domain"
+	"github.com/EgorLis/my-docs/internal/transport/web/logx"
+	"github.com/EgorLis/my-docs/internal/transport/web/mw"
 	v1 "github.com/EgorLis/my-docs/internal/transport/web/v1"
 )
 
@@ -41,7 +44,12 @@ type registerResponse struct {
 // @Failure     500 {object} domain.APIEnvelope
 // @Router      /api/register [post]
 func (h *HandlerRegister) Register(w http.ResponseWriter, r *http.Request) {
+	const op = "auth.register"
+	reqID := mw.RequestIDFromCtx(r.Context())
+	logx.Info(h.Log, reqID, op, "start", "method", r.Method, "path", r.URL.Path)
+
 	if r.Method != http.MethodPost {
+		logx.Error(h.Log, reqID, op, "method not allowed", domain.ErrMethodNotAllowed, "method", r.Method)
 		v1.WriteDomainError(w, r, domain.ErrMethodNotAllowed)
 		return
 	}
@@ -49,9 +57,9 @@ func (h *HandlerRegister) Register(w http.ResponseWriter, r *http.Request) {
 	// Принимаем JSON, но поддержим и форму (на случай ручного теста).
 	var req registerRequest
 	ct := r.Header.Get("Content-Type")
-	if ct != "" && (ct == "application/json" || ct[:16] == "application/json") {
+	if strings.HasPrefix(ct, "application/json") {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			h.Log.Printf("register: bad json: %v", err)
+			logx.Error(h.Log, reqID, op, "bad json", err)
 			v1.WriteDomainError(w, r, domain.ErrBadParams)
 			return
 		}
@@ -65,12 +73,14 @@ func (h *HandlerRegister) Register(w http.ResponseWriter, r *http.Request) {
 
 	// 1) Проверка admin token
 	if req.Token == "" || req.Token != h.AdminToken {
+		logx.Error(h.Log, reqID, op, "bad admin token", domain.ErrUnauth)
 		v1.WriteDomainError(w, r, domain.ErrUnauth)
 		return
 	}
 
 	// 2) Валидация логина/пароля (домен)
 	if !domain.ValidLogin(req.Login) || !domain.ValidPassword(req.Pswd) {
+		logx.Error(h.Log, reqID, op, "validation failed", domain.ErrBadParams, "login", req.Login)
 		v1.WriteDomainError(w, r, domain.ErrBadParams)
 		return
 	}
@@ -78,7 +88,7 @@ func (h *HandlerRegister) Register(w http.ResponseWriter, r *http.Request) {
 	// 3) Хэш пароля
 	hashStr, err := h.Hasher.Hash(req.Pswd)
 	if err != nil {
-		h.Log.Printf("register: hash err: %v", err)
+		logx.Error(h.Log, reqID, op, "hash failed", err)
 		v1.WriteDomainError(w, r, domain.ErrUnexpected)
 		return
 	}
@@ -87,11 +97,12 @@ func (h *HandlerRegister) Register(w http.ResponseWriter, r *http.Request) {
 	u, err := h.Users.CreateUser(r.Context(), req.Login, []byte(hashStr))
 	if err != nil {
 		// возможен уникальный конфликт по login — маппим как bad params
-		h.Log.Printf("register: create err: %v", err)
+		logx.Error(h.Log, reqID, op, "create user failed", err, "login", req.Login)
 		v1.WriteDomainError(w, r, domain.ErrBadParams)
 		return
 	}
 
 	// 5) Ответ по конверту
+	logx.Info(h.Log, reqID, op, "ok", "user_id", u.ID, "login", u.Login)
 	v1.WriteOKResponse(w, r, registerResponse{Login: u.Login})
 }

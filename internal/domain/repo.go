@@ -29,6 +29,7 @@ type ListFilter struct {
 }
 
 type UsersRepo interface {
+	Close()
 	Ping(context.Context) error
 	CreateUser(ctx context.Context, login string, passHash []byte) (User, error)
 	UserByLogin(ctx context.Context, login string) (User, error)

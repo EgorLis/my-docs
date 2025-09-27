@@ -18,10 +18,21 @@ import (
 func newRouter(s *Server) http.Handler {
 	healthLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[health] ", s.logger.Flags())
 	authLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[auth] ", s.logger.Flags())
+	docsLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[docs] ", s.logger.Flags())
 
-	hh := &health.Handler{DB: s.repos.Users, Cache: s.cache, Log: healthLog}
-	reg := &auth.HandlerRegister{Log: authLog, Users: s.repos.Users,
-		Hasher: s.auth.Hasher, AdminToken: s.cfg.AdminToken}
+	hh := &health.Handler{
+		DB:      s.repos.Users,
+		Cache:   s.cache,
+		Storage: s.store,
+		Log:     healthLog,
+	}
+
+	reg := &auth.HandlerRegister{
+		Log:        authLog,
+		Users:      s.repos.Users,
+		Hasher:     s.auth.Hasher,
+		AdminToken: s.cfg.AdminToken,
+	}
 
 	loginH := &auth.HandlerLogin{
 		Log:    authLog,
@@ -29,14 +40,13 @@ func newRouter(s *Server) http.Handler {
 		Hasher: s.auth.Hasher,
 		Tokens: s.auth.Tokens,
 	}
+
 	logoutH := &auth.HandlerLogout{
 		Log:       authLog,
 		Tokens:    s.auth.Tokens,
 		Blacklist: s.auth.Blacklist,
 	}
 
-	// --- docs ---
-	docsLog := log.New(s.logger.Writer(), s.logger.Prefix()+"[docs] ", s.logger.Flags())
 	dh := &doc.Handler{
 		Log:     docsLog,
 		Users:   s.repos.Users,
@@ -64,7 +74,7 @@ func newRouter(s *Server) http.Handler {
 	protected := mw.RequireAuth(mw.AuthDeps{Tokens: s.auth.Tokens, Blacklist: s.auth.Blacklist}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/docs":
-			dh.Upload(w, r)
+			limitBody(1<<30, dh.Upload)(w, r) // Ограничение на 1ГБ
 		case (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/api/docs":
 			dh.List(w, r)
 		case (r.Method == http.MethodGet || r.Method == http.MethodHead) && strings.HasPrefix(r.URL.Path, "/api/docs/"):
