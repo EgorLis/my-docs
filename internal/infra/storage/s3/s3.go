@@ -65,13 +65,20 @@ func New(ctx context.Context, cfg Config, logger *log.Logger) (*Storage, error) 
 
 // Ping проверяет доступность S3 и существование бакета.
 func (s *Storage) Ping(ctx context.Context) error {
+	start := time.Now()
+	s.log.Println("pinging storage...")
 	ok, err := s.cl.BucketExists(ctx, s.bucket)
 	if err != nil {
+		s.log.Printf("ping failed after %s: %v", time.Since(start), err)
 		return err
 	}
 	if !ok {
+		s.log.Printf("ping failed after %s: bucket %q does not exist", time.Since(start), s.bucket)
 		return fmt.Errorf("bucket %q does not exist", s.bucket)
 	}
+
+	s.log.Printf("ping successful in %s", time.Since(start))
+
 	return nil
 }
 

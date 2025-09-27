@@ -29,11 +29,13 @@ func New(cfg Config, logger *log.Logger) *Cache {
 }
 
 func (c *Cache) Ping(ctx context.Context) error {
+	start := time.Now()
+	c.logger.Println("pinging cache...")
 	err := c.rdb.Ping(ctx).Err()
 	if err != nil {
-		c.logger.Printf("PING failed: %v", err)
+		c.logger.Printf("ping failed after %s: %v", time.Since(start), err)
 	} else {
-		c.logger.Println("PING ok")
+		c.logger.Printf("ping successful in %s", time.Since(start))
 	}
 	return err
 }
