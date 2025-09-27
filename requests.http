@@ -1,0 +1,185 @@
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                ENV & COMMON VARIABLES (edit me)                  │
+### └───────────────────────────────────────────────────────────────────┘
+@host = http://localhost:8001
+# Админ-токен из .env/.env.docker (для регистрации)
+@adminToken = supersecret-admin-token
+# Пример пути к файлу для загрузки
+@sampleFile = ./samples/sample.jpg
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                           HEALTH                                  │
+### └───────────────────────────────────────────────────────────────────┘
+
+### Liveness
+GET {{host}}/api/healthz
+
+### Readiness (DB, Redis, S3)
+GET {{host}}/api/readyz
+
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                           AUTH                                    │
+### └───────────────────────────────────────────────────────────────────┘
+
+### Register user (one-time per login)
+# @name register
+POST {{host}}/api/register
+Content-Type: application/json
+
+{
+  "token": "{{adminToken}}",
+  "login": "egorlis01",
+  "pswd": "Qwe12345!"
+}
+
+### Login → get JWT
+# @name login
+POST {{host}}/api/auth
+Content-Type: application/json
+
+{
+  "login": "egorlis01",
+  "pswd": "Qwe12345!"
+}
+
+### Extract token from previous response (request variables)
+@authToken = {{login.response.body.$.response.token}}
+
+### Try an unauthorized call (should be 401)
+GET {{host}}/api/docs
+
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                       DOC UPLOADS                                 │
+### └───────────────────────────────────────────────────────────────────┘
+# ВАЖНО: сервер сейчас ожидает meta/json как СТРОКИ JSON (multipart поля)
+
+### Upload: JSON-only (no file)
+# @name upload_json_only
+POST {{host}}/api/docs
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data; boundary=UpB
+
+--UpB
+Content-Disposition: form-data; name="meta"
+
+{"name":"meta.json","file":false,"public":false,"mime":"application/json","grant":[]}
+--UpB
+Content-Disposition: form-data; name="json"
+
+{"title":"Test doc","tags":["a","b"],"n":1}
+--UpB--
+
+### Upload: FILE-only (no json)
+# @name upload_file_only
+POST {{host}}/api/docs
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data; boundary=UpB
+
+--UpB
+Content-Disposition: form-data; name="meta"
+
+{"name":"photo.jpg","file":true,"public":false,"mime":"image/jpeg","grant":[]}
+--UpB
+Content-Disposition: form-data; name="file"; filename="sample.jpg"
+Content-Type: image/jpeg
+
+< {{sampleFile}}
+--UpB--
+
+### Upload: FILE + JSON together
+# @name upload_both
+POST {{host}}/api/docs
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data; boundary=UpB
+
+--UpB
+Content-Disposition: form-data; name="meta"
+
+{"name":"photo+meta.jpg","file":true,"public":true,"mime":"image/jpeg","grant":["friend1","friend2"]}
+--UpB
+Content-Disposition: form-data; name="json"
+
+{"title":"Sunset","geo":{"lat":58.3859,"lon":24.4971},"tags":["sunset","sea","parnu"]}
+--UpB
+Content-Disposition: form-data; name="file"; filename="sample.jpg"
+Content-Type: image/jpeg
+
+< {{sampleFile}}
+--UpB--
+
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                           LIST                                    │
+### └───────────────────────────────────────────────────────────────────┘
+
+### List (default sort=created_desc)
+# @name list_default
+GET {{host}}/api/docs
+Authorization: Bearer {{authToken}}
+
+### List with filters & sort name_asc
+# @name list_name_asc
+GET {{host}}/api/docs?key=mime&value=image/jpeg&sort=name_asc&limit=50
+Authorization: Bearer {{authToken}}
+
+### List with sort name_desc
+GET {{host}}/api/docs?sort=name_desc
+Authorization: Bearer {{authToken}}
+
+### List with sort created_asc
+GET {{host}}/api/docs?sort=created_asc
+Authorization: Bearer {{authToken}}
+
+### HEAD list (should be 200 with no body; likely served from cache on repeat)
+HEAD {{host}}/api/docs
+Authorization: Bearer {{authToken}}
+
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                     GET SINGLE DOCUMENT                           │
+### └───────────────────────────────────────────────────────────────────┘
+
+# Возьмём первый id из последнего "list_default"
+@docId = {{list_default.response.body.$.data.docs[0].id}}
+
+### GET one (first time — MISS, caches meta/JSON)
+# @name get_doc
+GET {{host}}/api/docs/{{docId}}
+Authorization: Bearer {{authToken}}
+
+### Conditional GET with If-None-Match (should be 304)
+# Используем ETag из предыдущего ответа
+GET {{host}}/api/docs/{{docId}}
+Authorization: Bearer {{authToken}}
+If-None-Match: {{get_doc.response.headers.ETag}}
+
+### HEAD one (no body, only headers, uses cache)
+HEAD {{host}}/api/docs/{{docId}}
+Authorization: Bearer {{authToken}}
+
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                           DELETE                                  │
+### └───────────────────────────────────────────────────────────────────┘
+
+### Delete document
+DELETE {{host}}/api/docs/{{docId}}
+Authorization: Bearer {{authToken}}
+
+### List again to ensure cache invalidated (should be MISS in logs)
+GET {{host}}/api/docs
+Authorization: Bearer {{authToken}}
+
+
+### ┌───────────────────────────────────────────────────────────────────┐
+### │                           LOGOUT                                  │
+### └───────────────────────────────────────────────────────────────────┘
+
+### Logout (revoke token) — token in path
+DELETE {{host}}/api/auth/{{authToken}}
+
+### Try using revoked token (should be 401)
+GET {{host}}/api/docs
+Authorization: Bearer {{authToken}}
