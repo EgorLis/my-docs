@@ -61,8 +61,8 @@ func newRouter(s *Server) http.Handler {
 	mux := http.NewServeMux()
 
 	// health
-	mux.HandleFunc("GET /v1/healthz", hh.Liveness)
-	mux.HandleFunc("GET /v1/readyz", hh.Readiness)
+	mux.HandleFunc("GET /api/healthz", hh.Liveness)
+	mux.HandleFunc("GET /api/readyz", hh.Readiness)
 
 	// auth
 	mux.HandleFunc("POST /api/register", reg.Register)
